@@ -496,3 +496,75 @@
     false
   )
 )
+
+;; Process individual reward distribution
+(define-private (distribute-reward
+    (player principal)
+    (previous-result (response bool uint))
+  )
+  (match (map-get? leaderboard { player: player })
+    player-stats (let ((reward-amount (calculate-reward (get score player-stats))))
+      (if (and (is-ok previous-result) (> reward-amount u0))
+        (begin
+          (map-set leaderboard { player: player }
+            (merge player-stats { total-rewards: (+ (get total-rewards player-stats) reward-amount) })
+          )
+          (ok true)
+        )
+        previous-result
+      )
+    )
+    previous-result
+  )
+)
+
+;; MATHEMATICAL & GAME BALANCE FUNCTIONS
+
+;; Calculate merit-based rewards
+(define-private (calculate-reward (score uint))
+  (if (and (> score u100) (<= score u10000))
+    (* score u10)
+    u0
+  )
+)
+
+;; Calculate progressive experience requirements
+(define-private (calculate-level-up-experience (current-level uint))
+  (* BASE-EXPERIENCE-REQUIRED current-level)
+)
+
+;; Validate experience gain to prevent exploitation
+(define-private (validate-experience-gain
+    (current-experience uint)
+    (gained-experience uint)
+    (current-level uint)
+  )
+  (let (
+      (max-allowed-gain (calculate-level-up-experience current-level))
+      (new-total-experience (+ current-experience gained-experience))
+    )
+    (and
+      (<= gained-experience max-allowed-gain)
+      (<= new-total-experience (* MAX-EXPERIENCE-PER-LEVEL current-level))
+    )
+  )
+)
+
+;; Determine automatic level progression eligibility
+(define-private (can-level-up
+    (current-experience uint)
+    (gained-experience uint)
+    (current-level uint)
+  )
+  (let (
+      (new-total-experience (+ current-experience gained-experience))
+      (required-experience (calculate-level-up-experience current-level))
+    )
+    (>= new-total-experience required-experience)
+  )
+)
+
+;; PROTOCOL INITIALIZATION
+
+;; Initialize protocol with deployer as admin
+(map-set protocol-admin-whitelist tx-sender true)
