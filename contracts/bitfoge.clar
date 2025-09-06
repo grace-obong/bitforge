@@ -201,3 +201,102 @@
     (not (is-eq input (as-contract tx-sender)))
   )
 )
+
+;; Enhanced principal security validation
+(define-read-only (is-safe-principal (input principal))
+  (and
+    (is-valid-principal input)
+    (or
+      (is-protocol-admin input)
+      (is-some (map-get? leaderboard { player: input }))
+    )
+  )
+)
+
+;; DATA RETRIEVAL FUNCTIONS
+
+;; Retrieve world configuration details
+(define-read-only (get-world-details (world-id uint))
+  (map-get? game-worlds { world-id: world-id })
+)
+
+;; Retrieve avatar metadata and progression
+(define-read-only (get-avatar-details (avatar-id uint))
+  (map-get? avatar-metadata { avatar-id: avatar-id })
+)
+
+;; Get top performing players (simplified implementation)
+(define-read-only (get-top-players)
+  (let ((max-entries (var-get max-leaderboard-entries)))
+    (list
+      tx-sender
+    )
+  )
+)
+
+;; EXPERIENCE SYSTEM FUNCTIONS
+
+;; Calculate experience required for next level
+(define-read-only (get-next-level-requirement (avatar-id uint))
+  (match (get-avatar-details avatar-id)
+    metadata (ok (calculate-level-up-experience (get level metadata)))
+    ERR-INVALID-AVATAR
+  )
+)
+
+;; Validate experience gain eligibility
+(define-read-only (can-receive-experience
+    (avatar-id uint)
+    (experience-amount uint)
+  )
+  (match (get-avatar-details avatar-id)
+    metadata (ok (and
+      (< (get level metadata) MAX-LEVEL)
+      (validate-experience-gain (get experience metadata) experience-amount
+        (get level metadata)
+      )
+    ))
+    ERR-INVALID-AVATAR
+  )
+)
+
+;; PROTOCOL ADMINISTRATION FUNCTIONS
+
+;; Initialize protocol with core parameters
+(define-public (initialize-protocol
+    (entry-fee uint)
+    (max-entries uint)
+  )
+  (begin
+    (asserts! (is-protocol-admin tx-sender) ERR-NOT-AUTHORIZED)
+    (asserts! (and (>= entry-fee u1) (<= entry-fee u1000)) ERR-INVALID-FEE)
+    (asserts! (and (>= max-entries u1) (<= max-entries u500)) ERR-INVALID-ENTRIES)
+
+    (var-set protocol-fee entry-fee)
+    (var-set max-leaderboard-entries max-entries)
+
+    (ok true)
+  )
+)
+
+;; ASSET MANAGEMENT FUNCTIONS
+
+;; Mint new forge assets with comprehensive metadata
+(define-public (mint-forge-asset
+    (name (string-ascii 50))
+    (description (string-ascii 200))
+    (rarity (string-ascii 20))
+    (power-level uint)
+    (world-id uint)
+    (attributes (list 10 (string-ascii 20)))
+  )
+  (let ((token-id (+ (var-get total-assets) u1)))
+    (asserts! (is-protocol-admin tx-sender) ERR-NOT-AUTHORIZED)
+    (asserts! (is-valid-name name) ERR-INVALID-NAME)
+    (asserts! (is-valid-description description) ERR-INVALID-DESCRIPTION)
+    (asserts! (is-valid-rarity rarity) ERR-INVALID-RARITY)
+    (asserts! (is-valid-power-level power-level) ERR-INVALID-POWER-LEVEL)
+    (asserts! (is-some (get-world-details world-id)) ERR-WORLD-NOT-FOUND)
+    (asserts! (is-valid-attributes attributes) ERR-INVALID-ATTRIBUTES)
+
+    (try! (nft-mint? forge-asset token-id tx-sender))
