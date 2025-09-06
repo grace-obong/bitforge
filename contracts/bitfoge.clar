@@ -100,3 +100,104 @@
     world-access: (list 10 uint),
   }
 )
+
+;; Game World Configuration Structure
+(define-map game-worlds
+  { world-id: uint }
+  {
+    name: (string-ascii 50),
+    description: (string-ascii 200),
+    entry-requirement: uint,
+    active-players: uint,
+    total-rewards: uint,
+  }
+)
+
+;; Competitive Leaderboard Structure
+(define-map leaderboard
+  { player: principal }
+  {
+    score: uint,
+    games-played: uint,
+    total-rewards: uint,
+    avatar-id: uint,
+    rank: uint,
+    achievements: (list 20 (string-ascii 50)),
+  }
+)
+
+;; INPUT VALIDATION FUNCTIONS
+
+;; Validate asset and avatar naming conventions
+(define-private (is-valid-name (name (string-ascii 50)))
+  (and
+    (>= (len name) u1)
+    (<= (len name) u50)
+    (not (is-eq name ""))
+  )
+)
+
+;; Validate description length and content
+(define-private (is-valid-description (description (string-ascii 200)))
+  (and
+    (>= (len description) u1)
+    (<= (len description) u200)
+    (not (is-eq description ""))
+  )
+)
+
+;; Validate asset rarity categories
+(define-private (is-valid-rarity (rarity (string-ascii 20)))
+  (or
+    (is-eq rarity "common")
+    (is-eq rarity "uncommon")
+    (is-eq rarity "rare")
+    (is-eq rarity "epic")
+    (is-eq rarity "legendary")
+  )
+)
+
+;; Validate power level within acceptable bounds
+(define-private (is-valid-power-level (power uint))
+  (and (>= power u1) (<= power u1000))
+)
+
+;; Validate asset attribute structure
+(define-private (is-valid-attributes (attributes (list 10 (string-ascii 20))))
+  (and
+    (>= (len attributes) u1)
+    (<= (len attributes) u10)
+  )
+)
+
+;; Validate world access permissions
+(define-private (is-valid-world-access (worlds (list 10 uint)))
+  (and
+    (>= (len worlds) u1)
+    (<= (len worlds) u10)
+    (fold check-world-exists worlds true)
+  )
+)
+
+;; Helper function to verify world existence
+(define-private (check-world-exists
+    (world-id uint)
+    (valid bool)
+  )
+  (and valid (is-some (get-world-details world-id)))
+)
+
+;; ACCESS CONTROL & UTILITY FUNCTIONS
+
+;; Check administrative privileges
+(define-read-only (is-protocol-admin (sender principal))
+  (default-to false (map-get? protocol-admin-whitelist sender))
+)
+
+;; Validate principal addresses
+(define-read-only (is-valid-principal (input principal))
+  (and
+    (not (is-eq input tx-sender))
+    (not (is-eq input (as-contract tx-sender)))
+  )
+)
