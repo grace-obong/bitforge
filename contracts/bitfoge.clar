@@ -396,3 +396,103 @@
       )
       ERR-MAX-EXPERIENCE-REACHED
     )
+
+    (let (
+        (new-experience (+ current-experience experience-gained))
+        (should-level-up (can-level-up current-experience experience-gained current-level))
+        (new-level (if should-level-up
+          (+ current-level u1)
+          current-level
+        ))
+      )
+      (asserts! (or (not should-level-up) (<= new-level MAX-LEVEL))
+        ERR-MAX-LEVEL-REACHED
+      )
+
+      (map-set avatar-metadata { avatar-id: avatar-id }
+        (merge current-metadata {
+          experience: new-experience,
+          level: new-level,
+        })
+      )
+
+      (ok should-level-up)
+    )
+  )
+)
+
+;; WORLD MANAGEMENT FUNCTIONS
+
+;; Create new game worlds with entry requirements
+(define-public (create-game-world
+    (name (string-ascii 50))
+    (description (string-ascii 200))
+    (entry-requirement uint)
+  )
+  (let ((world-id (+ (var-get total-worlds) u1)))
+    (asserts! (is-protocol-admin tx-sender) ERR-NOT-AUTHORIZED)
+    (asserts! (is-valid-name name) ERR-INVALID-NAME)
+    (asserts! (is-valid-description description) ERR-INVALID-DESCRIPTION)
+    (asserts! (>= entry-requirement u0) ERR-INVALID-INPUT)
+
+    (map-set game-worlds { world-id: world-id } {
+      name: name,
+      description: description,
+      entry-requirement: entry-requirement,
+      active-players: u0,
+      total-rewards: u0,
+    })
+
+    (var-set total-worlds world-id)
+    (ok world-id)
+  )
+)
+
+;; COMPETITIVE LEADERBOARD FUNCTIONS
+
+;; Update player competitive scores
+(define-public (update-player-score
+    (player principal)
+    (new-score uint)
+  )
+  (let ((current-stats (unwrap! (map-get? leaderboard { player: player }) ERR-PLAYER-NOT-FOUND)))
+    (asserts! (is-protocol-admin tx-sender) ERR-NOT-AUTHORIZED)
+    (asserts! (is-valid-principal player) ERR-INVALID-INPUT)
+    (asserts! (and (>= new-score u0) (<= new-score u10000)) ERR-INVALID-SCORE)
+
+    (map-set leaderboard { player: player }
+      (merge current-stats {
+        score: new-score,
+        games-played: (+ (get games-played current-stats) u1),
+      })
+    )
+
+    (ok true)
+  )
+)
+
+;; BITCOIN REWARD DISTRIBUTION FUNCTIONS
+
+;; Distribute Bitcoin rewards to top performers
+(define-public (distribute-bitcoin-rewards)
+  (let ((top-players (get-top-players)))
+    (asserts! (is-protocol-admin tx-sender) ERR-NOT-AUTHORIZED)
+
+    (try! (fold distribute-reward (filter is-valid-reward-candidate top-players)
+      (ok true)
+    ))
+
+    (ok true)
+  )
+)
+
+;; Validate reward eligibility
+(define-private (is-valid-reward-candidate (player principal))
+  (match (map-get? leaderboard { player: player })
+    stats (and
+      (> (get score stats) u0)
+      (is-valid-principal player)
+    )
+    false
+  )
+)
