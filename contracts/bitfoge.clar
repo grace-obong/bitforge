@@ -300,3 +300,99 @@
     (asserts! (is-valid-attributes attributes) ERR-INVALID-ATTRIBUTES)
 
     (try! (nft-mint? forge-asset token-id tx-sender))
+
+    (map-set forge-asset-metadata { token-id: token-id } {
+      name: name,
+      description: description,
+      rarity: rarity,
+      power-level: power-level,
+      world-id: world-id,
+      attributes: attributes,
+      experience: u0,
+      level: u1,
+    })
+
+    (var-set total-assets token-id)
+    (ok token-id)
+  )
+)
+
+;; Transfer forge assets between players
+(define-public (transfer-game-asset
+    (token-id uint)
+    (recipient principal)
+  )
+  (begin
+    (asserts!
+      (is-eq tx-sender
+        (unwrap! (nft-get-owner? forge-asset token-id) ERR-INVALID-GAME-ASSET)
+      )
+      ERR-NOT-AUTHORIZED
+    )
+
+    (asserts! (is-valid-principal recipient) ERR-INVALID-INPUT)
+
+    (nft-transfer? forge-asset token-id tx-sender recipient)
+  )
+)
+
+;; AVATAR SYSTEM FUNCTIONS
+
+;; Create new gaming avatar with world access
+(define-public (create-avatar
+    (name (string-ascii 50))
+    (world-access (list 10 uint))
+  )
+  (let ((avatar-id (+ (var-get total-avatars) u1)))
+    (asserts! (is-valid-name name) ERR-INVALID-NAME)
+    (asserts! (is-valid-world-access world-access) ERR-INVALID-WORLD-ACCESS)
+    (asserts! (is-none (map-get? leaderboard { player: tx-sender }))
+      ERR-ALREADY-REGISTERED
+    )
+
+    (try! (nft-mint? forge-avatar avatar-id tx-sender))
+
+    (map-set avatar-metadata { avatar-id: avatar-id } {
+      name: name,
+      level: u1,
+      experience: u0,
+      achievements: (list),
+      equipped-assets: (list),
+      world-access: world-access,
+    })
+
+    (map-set leaderboard { player: tx-sender } {
+      score: u0,
+      games-played: u0,
+      total-rewards: u0,
+      avatar-id: avatar-id,
+      rank: u0,
+      achievements: (list),
+    })
+
+    (var-set total-avatars avatar-id)
+    (ok avatar-id)
+  )
+)
+
+;; Update avatar experience with automatic leveling
+(define-public (update-avatar-experience
+    (avatar-id uint)
+    (experience-gained uint)
+  )
+  (let (
+      (current-metadata (unwrap! (get-avatar-details avatar-id) ERR-INVALID-AVATAR))
+      (avatar-owner (unwrap! (nft-get-owner? forge-avatar avatar-id) ERR-INVALID-AVATAR))
+      (current-level (get level current-metadata))
+      (current-experience (get experience current-metadata))
+    )
+    (asserts! (is-protocol-admin tx-sender) ERR-NOT-AUTHORIZED)
+    (asserts! (<= avatar-id (var-get total-avatars)) ERR-INVALID-AVATAR)
+    (asserts! (> experience-gained u0) ERR-INVALID-INPUT)
+    (asserts! (< current-level MAX-LEVEL) ERR-MAX-LEVEL-REACHED)
+    (asserts!
+      (validate-experience-gain current-experience experience-gained
+        current-level
+      )
+      ERR-MAX-EXPERIENCE-REACHED
+    )
